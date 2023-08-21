@@ -29,6 +29,13 @@ Maneuver::Maneuver(const pugi::xml_node & node, Scope & scope)
   });
 }
 
+auto Maneuver::start() -> void
+{
+  for (auto & element : elements) {
+    element.as<Event>().extra_actors = extra_actors;
+  }
+}
+
 auto Maneuver::overrideEvents() -> void
 {
   for (auto && element : elements) {

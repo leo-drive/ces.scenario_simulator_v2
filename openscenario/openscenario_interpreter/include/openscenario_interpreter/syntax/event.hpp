@@ -41,7 +41,7 @@ inline namespace syntax
  *  </xsd:complexType>
  *
  * -------------------------------------------------------------------------- */
-struct Event : private Scope, public StoryboardElement
+struct Event : public Scope, public StoryboardElement
 {
   using Scope::name;
 

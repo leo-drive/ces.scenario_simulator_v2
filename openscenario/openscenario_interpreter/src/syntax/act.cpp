@@ -31,6 +31,16 @@ Act::Act(const pugi::xml_node & node, Scope & scope)
   });
 }
 
+auto Act::start() -> void
+{
+  auto extra_actors = std::list<EntityRef>{ };
+  for (auto & element : elements) {
+    if (element.as<ManeuverGroup>().actors.select_triggering_entities) {
+      element.as<ManeuverGroup>().extra_actors = extra_actors;
+    }
+  }
+}
+
 auto operator<<(nlohmann::json & json, const Act & datum) -> nlohmann::json &
 {
   json["name"] = datum.name;

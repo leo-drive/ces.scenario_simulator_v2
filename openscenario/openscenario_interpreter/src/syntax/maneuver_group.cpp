@@ -40,6 +40,7 @@ auto ManeuverGroup::start() -> void
   for (auto && element : elements) {
     assert(element.template is<Maneuver>());
     assert(element.template is_also<StoryboardElement>());
+    element.as<Maneuver>().extra_actors = extra_actors;
     element.template as<StoryboardElement>().transitionTo(start_transition);
   }
 }

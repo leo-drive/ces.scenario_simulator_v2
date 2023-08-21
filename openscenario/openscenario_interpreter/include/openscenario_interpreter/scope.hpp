@@ -192,6 +192,8 @@ public:
 
   std::list<EntityRef> actors;
 
+  std::list<EntityRef> extra_actors;
+
   double seed;  // NOTE: `seed` is used only for sharing randomSeed in Stochastic now
 
   Scope() = delete;
