@@ -62,7 +62,19 @@ auto FollowPolylineTrajectoryAction::tick() -> BT::NodeStatus
       not getInput<decltype(target_speed)>("target_speed", target_speed) or
       not polyline_trajectory) {
     return BT::NodeStatus::FAILURE;
-  } else if (
+  }
+
+  entity_status->setZeroZ();
+  for (auto & vertex : polyline_trajectory->shape.vertices) {
+    vertex.position.position.z = 0;
+  }
+
+  behavior_parameter.dynamic_constraints.max_acceleration = 500;
+  behavior_parameter.dynamic_constraints.max_deceleration = 500;
+  behavior_parameter.dynamic_constraints.max_acceleration_rate = 5000;
+  behavior_parameter.dynamic_constraints.max_deceleration_rate = 5000;
+
+  if (
     const auto updated_status = traffic_simulator::follow_trajectory::makeUpdatedStatus(
       static_cast<traffic_simulator::EntityStatus>(*entity_status), *polyline_trajectory,
       behavior_parameter, step_time)) {

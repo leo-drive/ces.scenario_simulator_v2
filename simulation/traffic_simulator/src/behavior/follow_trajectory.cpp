@@ -102,7 +102,8 @@ auto makeUpdatedStatus(
      "Steering Behaviors For Autonomous Characters" by Craig Reynolds for more
      information.
 
-     See https://www.researchgate.net/publication/2495826_Steering_Behaviors_For_Autonomous_Characters
+     See
+     https://www.researchgate.net/publication/2495826_Steering_Behaviors_For_Autonomous_Characters
   */
   if (polyline_trajectory.shape.vertices.empty()) {
     return std::nullopt;
@@ -165,6 +166,27 @@ auto makeUpdatedStatus(
             }
             return total_distance;
           };
+          if (true) {
+            std::cout << std::endl
+                      << "[" << entity_status.name << "] remaining_time = "
+                      << (not std::isnan(polyline_trajectory.base_time)
+                            ? polyline_trajectory.base_time
+                            : 0.0) +
+                           first_waypoint_with_arrival_time_specified->time - entity_status.time
+                      << " = "
+                      << (not std::isnan(polyline_trajectory.base_time)
+                            ? polyline_trajectory.base_time
+                            : 0.0)
+                      << " + " << first_waypoint_with_arrival_time_specified->time << " - "
+                      << entity_status.time << " distance: " << distance_to_front_waypoint
+                      << std::endl;
+            std::cout << "speed: " << entity_status.action_status.twist.linear.x << std::endl;
+            std::cout << "acc: " << entity_status.action_status.accel.linear.x << std::endl;
+            std::cout << "position: " << position.x << ", " << position.y << ", " << position.z
+                      << std::endl;
+            std::cout << "target: " << target_position.x << ", " << target_position.y << ", "
+                      << target_position.z << std::endl;
+          }
 
           if (const auto remaining_time =
                 (not std::isnan(polyline_trajectory.base_time) ? polyline_trajectory.base_time
@@ -281,7 +303,8 @@ auto makeUpdatedStatus(
 
              distance = (speed + desired_speed) * remaining_time * 1/2
 
-                      = (speed + speed + desired_acceleration * remaining_time) * remaining_time * 1/2
+                      = (speed + speed + desired_acceleration * remaining_time) * remaining_time *
+             1/2
 
                       = speed * remaining_time + desired_acceleration * remaining_time^2 * 1/2
           */
@@ -343,9 +366,9 @@ auto makeUpdatedStatus(
        It's okay for this value to be infinite.
     */
     const auto remaining_time_to_arrival_to_front_waypoint =
-      distance_to_front_waypoint / desired_speed;  // [s]
+      2 * distance_to_front_waypoint / (speed + desired_speed);  // [s]
 
-    if constexpr (false) {
+    if constexpr (true) {
       // clang-format off
       std::cout << std::fixed << std::boolalpha << std::string(80, '-') << std::endl;
 

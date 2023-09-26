@@ -55,6 +55,7 @@ public:
   auto getLinearJerk() const noexcept -> double;
   auto setTime(double) -> void;
   auto getTime() const noexcept -> double;
+  auto setZeroZ() -> void { entity_status_.pose.position.z = 0; }
 
 private:
   auto canonicalize(
