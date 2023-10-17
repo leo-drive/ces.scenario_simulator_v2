@@ -38,8 +38,8 @@ auto Act::run() -> void
   for (auto && maneuver_group : elements) {
     try {
       assert(maneuver_group.is_also<ManeuverGroup>());
-      if (element.as<ManeuverGroup>().actors.select_triggering_entities) {
-        element.as<ManeuverGroup>().extra_actors = extra_actors;
+      if (maneuver_group.as<ManeuverGroup>().actors.select_triggering_entities) {
+        maneuver_group.as<ManeuverGroup>().extra_actors = extra_actors;
       }
       maneuver_group.evaluate();
       ++index;

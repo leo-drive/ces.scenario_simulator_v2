@@ -36,7 +36,7 @@ auto Maneuver::run() -> void
   for (auto && event : elements) {
     try {
       assert(event.is_also<Event>());
-      element.as<Event>().extra_actors = extra_actors;
+      event.as<Event>().extra_actors = extra_actors;
       event.evaluate();
       ++index;
     } catch (const SpecialAction<EXIT_FAILURE> & action) {
