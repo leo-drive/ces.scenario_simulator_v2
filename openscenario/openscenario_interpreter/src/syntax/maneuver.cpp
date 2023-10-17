@@ -30,13 +30,20 @@ Maneuver::Maneuver(const pugi::xml_node & node, Scope & scope)
   });
 }
 
+auto Maneuver::start() -> void
+{
+  for (auto && event : elements) {
+    assert(event.is_also<Event>());
+    event.as<Event>().extra_actors = extra_actors;
+  }
+}
+
 auto Maneuver::run() -> void
 {
   std::size_t index{0};
   for (auto && event : elements) {
     try {
       assert(event.is_also<Event>());
-      event.as<Event>().extra_actors = extra_actors;
       event.evaluate();
       ++index;
     } catch (const SpecialAction<EXIT_FAILURE> & action) {

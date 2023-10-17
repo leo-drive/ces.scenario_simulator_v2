@@ -32,15 +32,21 @@ Act::Act(const pugi::xml_node & node, Scope & scope)
   });
 }
 
+auto Act::start() -> void
+{
+  for (auto && maneuver_group : elements) {
+    if (maneuver_group.as<ManeuverGroup>().actors.select_triggering_entities) {
+      maneuver_group.as<ManeuverGroup>().extra_actors = extra_actors;
+    }
+  }
+}
+
 auto Act::run() -> void
 {
   std::size_t index{0};
   for (auto && maneuver_group : elements) {
     try {
       assert(maneuver_group.is_also<ManeuverGroup>());
-      if (maneuver_group.as<ManeuverGroup>().actors.select_triggering_entities) {
-        maneuver_group.as<ManeuverGroup>().extra_actors = extra_actors;
-      }
       maneuver_group.evaluate();
       ++index;
     } catch (const SpecialAction<EXIT_FAILURE> & action) {
