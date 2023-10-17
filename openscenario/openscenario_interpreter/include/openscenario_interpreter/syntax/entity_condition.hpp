@@ -17,6 +17,14 @@
 
 #include <openscenario_interpreter/scope.hpp>
 #include <openscenario_interpreter/syntax/triggering_entities.hpp>
+#include <openscenario_interpreter/syntax/acceleration_condition.hpp>
+#include <openscenario_interpreter/syntax/collision_condition.hpp>
+#include <openscenario_interpreter/syntax/distance_condition.hpp>
+#include <openscenario_interpreter/syntax/reach_position_condition.hpp>
+#include <openscenario_interpreter/syntax/relative_distance_condition.hpp>
+#include <openscenario_interpreter/syntax/speed_condition.hpp>
+#include <openscenario_interpreter/syntax/stand_still_condition.hpp>
+#include <openscenario_interpreter/syntax/time_headway_condition.hpp>
 #include <pugixml.hpp>
 
 namespace openscenario_interpreter
@@ -48,6 +56,23 @@ struct EntityCondition : public ComplexType
 {
   explicit EntityCondition(const pugi::xml_node &, Scope &, const TriggeringEntities &);
 };
+
+DEFINE_LAZY_VISITOR(
+  const EntityCondition,
+  // CASE(EndOfRoadCondition),
+  CASE(CollisionCondition),
+  // CASE(OffroadCondition),
+  CASE(TimeHeadwayCondition),
+  // CASE(TimeToCollisionCondition),
+  CASE(AccelerationCondition),
+  CASE(StandStillCondition),
+  CASE(SpeedCondition),
+  // CASE(RelativeSpeedCondition),
+  // CASE(TraveledDistanceCondition),
+  CASE(ReachPositionCondition),
+  CASE(DistanceCondition),
+  CASE(RelativeDistanceCondition),
+);
 }  // namespace syntax
 }  // namespace openscenario_interpreter
 

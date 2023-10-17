@@ -18,7 +18,10 @@
 #include <nlohmann/json.hpp>
 #include <openscenario_interpreter/scope.hpp>
 #include <openscenario_interpreter/syntax/condition_group.hpp>
+#include <openscenario_interpreter/syntax/entity_ref.hpp>
+#include <openscenario_interpreter/syntax/string.hpp>
 #include <pugixml.hpp>
+#include <vector>
 
 namespace openscenario_interpreter
 {
@@ -46,6 +49,8 @@ struct Trigger : public std::list<ConditionGroup>
   : std::list<ConditionGroup>(condition_groups)
   {
   }
+
+  auto triggererEntities() const -> std::list<EntityRef>;
 
   auto activeConditionGroupIndex() const -> iterator::difference_type;
 

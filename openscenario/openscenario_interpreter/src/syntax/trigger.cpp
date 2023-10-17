@@ -12,8 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <openscenario_interpreter/syntax/entity_ref.hpp>
+#include <openscenario_interpreter/syntax/string.hpp>
+#include <openscenario_interpreter/syntax/by_entity_condition.hpp>
+#include <openscenario_interpreter/syntax/entity_condition.hpp>
 #include <openscenario_interpreter/reader/element.hpp>
 #include <openscenario_interpreter/syntax/trigger.hpp>
+#include <iterator>
+#include <list>
+#include <vector>
 
 namespace openscenario_interpreter
 {
@@ -42,6 +49,26 @@ auto Trigger::evaluate() -> Object
         const auto rhs = condition_group.evaluate();
         return lhs or rhs.as<Boolean>();
       }));
+}
+
+auto Trigger::triggererEntities() const -> std::list<EntityRef>
+{
+  auto triggerer_entities = std::list<EntityRef>{};
+  for (const auto & condition_group : *this) {
+    if (condition_group.current_value) {
+      for (const auto & condition : condition_group) {
+        if (condition.current_value and condition.is<ByEntityCondition>()) {
+          apply<void>([&](const auto &entity_condition) {
+            const auto &entity_refs = entity_condition.triggering_entities.entity_refs;
+            triggerer_entities.insert(std::end(triggerer_entities), std::begin(entity_refs), std::end(entity_refs));
+          }, condition.as<EntityCondition>());
+        }
+      }
+    }
+  }
+  triggerer_entities.sort();
+  triggerer_entities.unique();
+  return triggerer_entities;
 }
 
 auto Trigger::activeConditionGroupIndex() const -> iterator::difference_type
