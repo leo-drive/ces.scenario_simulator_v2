@@ -19,7 +19,8 @@ mkdocs-codeinclude-plugin = "^0.2.1"
 mkdocs-git-revision-date-localized-plugin = "^1.2.0"
 plantuml = "^0.3.0"
 mkdocs-redirects = "^1.2.1"
-
+rosdoc2 = { git = "https://github.com/ros-infrastructure/rosdoc2.git" }
+sphinx="^6.0.0"
 
 [build-system]
 requires = ["poetry-core"]
