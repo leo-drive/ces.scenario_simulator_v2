@@ -300,6 +300,79 @@ private:
   }
 };  // class CombinedCurve
 
+/**
+ * Geometric transformation applied to a base curve.
+ */
+class TransformedCurve : public ParametricCurve
+{
+  const ParametricCurve::Ptr base_curve_;
+  const Transformation2d transformation_;
+
+public:
+  TransformedCurve(const ParametricCurve::Ptr& base_curve,
+                   const Transformation2d& transformation)
+    : base_curve_(base_curve)
+    , transformation_(transformation)
+  { }
+
+private:
+  virtual Point2d getPosition_(double t) override
+  {
+    return applyTransformation(base_curve_->getPosition(t),
+                               transformation_);
+  }
+
+  virtual Vector2d getTangentVector_(double t) override
+  {
+    return applyTransformation(base_curve_->getTangentVector(t),
+                               transformation_);
+  }
+};  // class TransformedCurve
+
+/**
+ * Lateral shift applied to a base curve.
+ */
+
+class LaterallyShiftedCurve : public ParametricCurve
+{
+  const ParametricCurve::Ptr base_curve_;
+  const double lateral_shift_;
+
+public:
+  LaterallyShiftedCurve(const ParametricCurve::Ptr base_curve,
+                        const double lateral_shift)
+    : base_curve_(base_curve)
+    , lateral_shift_(lateral_shift)
+  { }
+
+private:
+  virtual Point2d getPosition_(double t) override
+  {
+    auto base_position = base_curve_->getPosition(t);
+    auto normal_vector = rotate(base_curve_->getTangentVector(t), M_PI / 2);
+
+    return base_position + normal_vector * lateral_shift_;
+  }
+
+  virtual Vector2d getTangentVector_(double t) override
+  {
+    return base_curve_->getTangentVector(t);
+  }
+};  // class LaterallyShiftedCurve
+
+void transformCurve(const ParametricCurve::Ptr& curve_in,
+                    const Transformation2d& transformation,
+                    ParametricCurve::Ptr& curve_out)
+{
+  curve_out = std::make_shared<TransformedCurve>(curve_in, transformation);
+}
+
+void shiftCurveLaterally(const ParametricCurve::Ptr& curve_in,
+                         const double& lateral_offset,
+                         ParametricCurve::Ptr& curve_out)
+{
+  curve_out = std::make_shared<LaterallyShiftedCurve>(curve_in, lateral_offset);
+}
 
 }  // namespace map_fragment
 

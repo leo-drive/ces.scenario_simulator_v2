@@ -55,6 +55,20 @@ public:
   }
 }; // class RoadCrossSection
 
+void generateSliceOfCrossSection(const RoadCrossSectionDescription& cross_section_description,
+                                 const uint64_t& first_lane_index,
+                                 const uint64_t& number_of_lanes,
+                                 RoadCrossSectionDescription& slice_description,
+                                 double& lateral_offset)
+{
+  slice_description.number_of_lanes = number_of_lanes;
+  slice_description.lane_width = cross_section_description.lane_width;
+
+  lateral_offset = -cross_section_description.lane_width * (
+    first_lane_index + 0.5 * number_of_lanes - 0.5 * cross_section_description.number_of_lanes
+  );
+}
+
 class RoadSegment
 {
   ParametricCurve::Ptr guide_curve_;
