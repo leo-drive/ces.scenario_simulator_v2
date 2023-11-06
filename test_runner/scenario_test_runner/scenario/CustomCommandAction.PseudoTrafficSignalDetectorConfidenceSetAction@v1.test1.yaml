@@ -1,0 +1,38 @@
+OpenSCENARIO:
+  FileHeader:
+    revMajor: 1
+    revMinor: 0
+    date: '2023-10-30T08:31:04.600Z'
+    description: 'scenario for testing PseudoTrafficSignalDetectorConfidenceSetAction@v1 in openscenario_interpreter.'
+    author: 'Kotaro Yoshimoto'
+  CatalogLocations:
+  RoadNetwork:
+    LogicFile:
+      filepath: $(find-pkg-share kashiwanoha_map)/map
+    TrafficSignals:
+      TrafficSignalController:
+        - name: controller
+          Phase:
+            - name: phase-1
+              duration: 5
+              TrafficSignalState:
+                - { trafficSignalId: '34802', state: 'green' }
+  Entities:
+  Storyboard:
+    Init:
+      Actions:
+        UserDefinedAction:
+          - CustomCommandAction:
+              type: PseudoTrafficSignalDetectorConfidenceSetAction@v1(34802, 0.5)
+    Story:
+      - name: ''
+        Act:
+          - name: ''
+            ManeuverGroup:
+              - maximumExecutionCount: 1
+                name: ''
+                Actors:
+                  selectTriggeringEntities: false
+            StartTrigger:
+    StopTrigger:
+      ConditionGroup: []
