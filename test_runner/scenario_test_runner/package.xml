@@ -20,6 +20,14 @@
   <depend>python3-xmlschema</depend>
   <depend>rclpy</depend>
   <depend>simple_sensor_simulator</depend>
+
+<!--  <test_depend>ament_cmake_copyright</test_depend>-->
+<!--  <test_depend>ament_cmake_pep257</test_depend>-->
+  <test_depend>ament_cmake_pytest</test_depend>
+<!--  <test_depend>ament_cmake_xmllint</test_depend>-->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>launch_pytest</test_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
