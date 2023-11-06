@@ -15,6 +15,8 @@
 #define OPENSCENARIO_INTERPRETER_NO_EXTENSION
 
 #include <algorithm>
+#include <iostream>
+#include <fstream>
 #include <nlohmann/json.hpp>
 #include <openscenario_interpreter/openscenario_interpreter.hpp>
 #include <openscenario_interpreter/record.hpp>
@@ -160,6 +162,8 @@ auto Interpreter::engaged() const -> bool
 
 auto Interpreter::on_activate(const rclcpp_lifecycle::State &) -> Result
 {
+  std::ofstream file("/tmp/on_activate_log.txt");
+  file << "on_activate" << std::endl;
   auto evaluate_storyboard = [this]() {
     withExceptionHandler(
       [this](auto &&...) {
@@ -190,10 +194,14 @@ auto Interpreter::on_activate(const rclcpp_lifecycle::State &) -> Result
   };
 
   if (scenarios.empty()) {
+    file << "scenario is empty!" << std::endl;
+    file.close();
     return Result::FAILURE;
   } else {
     return withExceptionHandler(
-      [this](auto &&...) {
+      [this, &file](auto &&...) {
+        file << "an exception is occured..." << std::endl;
+        file.close();
         publishCurrentContext();
         reset();
         return Interpreter::Result::FAILURE;  // => Inactive
@@ -207,9 +215,10 @@ auto Interpreter::on_activate(const rclcpp_lifecycle::State &) -> Result
             "-x", "/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/debug/intersection");
           // clang-format on
         }
-
+        file << "start to call SimulatorCore::activate" << std::endl;
         SimulatorCore::activate(
           shared_from_this(), makeCurrentConfiguration(), local_real_time_factor, local_frame_rate);
+        file << "finish to call SimulatorCore::activate" << std::endl;
 
         /*
            DIRTY HACK!
@@ -230,12 +239,18 @@ auto Interpreter::on_activate(const rclcpp_lifecycle::State &) -> Result
         assert(publisher_of_context->is_activated());
 
         if (currentScenarioDefinition()) {
+          file << "start to evaluate InstantaneousActions" << std::endl;
           currentScenarioDefinition()->storyboard.init.evaluateInstantaneousActions();
         } else {
           throw Error("No script evaluable.");
         }
 
+        file << "start to spin evaluate_storyboard" << std::endl;
+
         timer = create_wall_timer(currentLocalFrameRate(), evaluate_storyboard);
+
+        file << "succeeded to start to spin evaluate_storyboard" << std::endl;
+        file.close();
 
         return Interpreter::Result::SUCCESS;  // => Active
       });
