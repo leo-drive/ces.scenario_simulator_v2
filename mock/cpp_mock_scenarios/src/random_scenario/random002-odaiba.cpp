@@ -28,10 +28,18 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <cstdlib>
+#include <ctime>
 
 using traffic_simulator::LaneletPose;
 using traffic_simulator::helper::constructLaneletPose;
 using traffic_simulator::lane_change::Direction;
+
+enum class DIRECTION {
+  CENTER,
+  LEFT,
+  RIGHT,
+};
 
 namespace
 {
@@ -56,6 +64,22 @@ geometry_msgs::msg::Pose createPose(const double x, const double y, const double
     .position(geometry_msgs::build<geometry_msgs::msg::Point>().x(x).y(y).z(z))
     .orientation(geometry_msgs::msg::Quaternion());
 }
+
+// Function to generate a random integer between min and max
+int randomInt(int min, int max)
+{
+  if (min == max) return min;
+  return min + rand() % (max - min + 1);
+}
+
+// Function to generate a random double between min and max
+double randomDouble(double min, double max)
+{
+  double range = max - min;
+  if (std::abs(range) < 0.0001) return min;
+  double div = RAND_MAX / range;
+  return min + (rand() / div);
+}
 }  // namespace
 
 class RandomScenario : public cpp_mock_scenarios::CppScenarioNode
@@ -63,7 +87,8 @@ class RandomScenario : public cpp_mock_scenarios::CppScenarioNode
 public:
   explicit RandomScenario(const rclcpp::NodeOptions & option)
   : cpp_mock_scenarios::CppScenarioNode(
-      "lanechange_left", ament_index_cpp::get_package_share_directory("kashiwanoha_map") + "/map",
+      "lanechange_left", /* ament_index_cpp::get_package_share_directory("kashiwanoha_map") + "/map" */
+      "/home/horibe/workspace/map/odaiba_reference",
       "lanelet2_map.osm", __FILE__, false, option),
     param_listener_(std::make_shared<random001::ParamListener>(get_node_parameters_interface())),
     engine_(seed_gen_())
@@ -80,11 +105,16 @@ private:
   bool lane_change_requested = false;
 
   void spawnAndCrossPedestrian(
-    const int entity_index, const LaneletPose & spawn_pose, const LaneletPose & goal_pose)
+    const int entity_index, const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id)
   {
     const auto & p = params_.random_parameters.crossing_pedestrian;
-    std::string entity_name = "pedestrian" + std::to_string(entity_index);
-    // constexpr lanelet::Id lanelet_id = 34392;
+    std::normal_distribution<> offset_distribution(0.0, p.offset_variance);
+    std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
+    const auto spawn_pose = constructLaneletPose(spawn_lane_id, 0.0, offset_distribution(engine_));
+    const auto goal_pose = constructLaneletPose(goal_lane_id, 25.0);
+
+    std::string entity_name = "pedestrian_" + std::to_string(spawn_lane_id) + "_" +
+                              std::to_string(goal_lane_id) + "_" + std::to_string(entity_index);
     constexpr double reach_tolerance = 5.0;
     if (
       !api_.entityExists(entity_name) &&
@@ -127,25 +157,60 @@ private:
     }
   }
 
-  void spawnRoadParkingVehicles(const lanelet::Id & spawn_lanelet_id)
+  void spawnAndMoveToGoal(const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id)
+  {
+    const auto & p = params_.random_parameters.lane_following_vehicle;
+    const auto spawn_pose = constructLaneletPose(spawn_lane_id, 0.0);
+    const auto goal_pose = constructLaneletPose(goal_lane_id, 0.0);
+
+    const auto entity_name =
+      "vehicle_move_to_goal_" + std::to_string(spawn_lane_id) + "_" + std::to_string(goal_lane_id);
+    if (!api_.entityExists(entity_name)) {
+      api_.spawn(entity_name, api_.canonicalize(spawn_pose), getVehicleParameters());
+      std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
+      const auto speed = speed_distribution(engine_);
+      api_.requestSpeedChange(entity_name, speed, true);
+      api_.setLinearVelocity(entity_name, speed);
+    }
+
+    constexpr double reach_tolerance = 2.0;
+    if (api_.reachPosition(entity_name, api_.canonicalize(goal_pose), reach_tolerance)) {
+        api_.despawn(entity_name);
+    }
+  }
+
+  void spawnRoadParkingVehicles(const lanelet::Id & spawn_lanelet_id, const size_t number_of_vehicles, const DIRECTION direction)
   {
     const auto & p = params_.random_parameters.road_parking_vehicle;
     std::normal_distribution<> normal_dist(0.0, p.s_variance);
-    const auto spawn_road_parking_vehicle =
-      [&](const auto & entity_index, const auto offset, const auto number_of_vehicles) {
-        std::string entity_name = "road_parking_" + std::to_string(entity_index);
-        const auto space = static_cast<double>(entity_index) / number_of_vehicles;
-        const auto spawn_position =
-          space * api_.getLaneletLength(spawn_lanelet_id) + normal_dist(engine_);
-        const auto spawn_pose =
-          constructLaneletPose(spawn_lanelet_id, spawn_position, offset, 0, 0);
-        const auto vehicle_param = getVehicleParameters(get_entity_subtype(p.entity_type));
-        api_.spawn(entity_name, api_.canonicalize(spawn_pose), vehicle_param);
-        api_.requestSpeedChange(entity_name, 0, true);
-      };
-    std::uniform_real_distribution<> dist(p.min_offset, p.max_offset);
-    for (int i = 0; i < p.number_of_vehicle; i++) {
-      spawn_road_parking_vehicle(i, dist(engine_), p.number_of_vehicle);
+
+    const auto spawn_road_parking_vehicle = [&](const auto & entity_index, const auto offset) {
+      std::string entity_name =
+        "road_parking_" + std::to_string(spawn_lanelet_id) + "_" + std::to_string(entity_index);
+      if (api_.entityExists(entity_name)) {
+        return;
+      }
+      const auto space = static_cast<double>(entity_index) / number_of_vehicles;
+      const auto spawn_position =
+        space * api_.getLaneletLength(spawn_lanelet_id) + normal_dist(engine_);
+      const auto spawn_pose = constructLaneletPose(spawn_lanelet_id, spawn_position, offset, 0, 0);
+      const auto vehicle_param = getVehicleParameters(get_entity_subtype(p.entity_type));
+      api_.spawn(entity_name, api_.canonicalize(spawn_pose), vehicle_param);
+      api_.requestSpeedChange(entity_name, 0, true);
+    };
+
+    const auto [min_offset, max_offset] = [&]() -> std::pair<double, double> {
+      if (direction == DIRECTION::CENTER) {
+        return {-0.5, 0.5};
+      } else if (direction == DIRECTION::LEFT) {
+        return {3.0, 1.0};
+      } else {
+        return {-1.0, -3.0};
+      }
+    }();
+    std::uniform_real_distribution<> dist(min_offset, max_offset);
+    for (size_t i = 0; i < number_of_vehicles; i++) {
+      spawn_road_parking_vehicle(i, dist(engine_));
     }
   }
 
@@ -189,8 +254,11 @@ private:
     }
   }
 
+
+
   void onUpdate() override
   {
+#if 0    
     // パラメータが更新されたら、全車両を更新
     if (param_listener_->is_old(params_)) {
       /// When the parameter was updated, clear entity before re-spawing entity.
@@ -211,18 +279,30 @@ private:
 
     /// Spawn and cross pedestrian if it does not exist and ego entity does not exists on lane
     /// "34576"
-    {
-      const auto & p = params_.random_parameters.crossing_pedestrian;
-      std::normal_distribution<> offset_distribution(0.0, p.offset_variance);
-      std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
-      const auto spawn_pose = constructLaneletPose(34392, 0.0, offset_distribution(engine_));
-      const auto goal_pose = constructLaneletPose(34576, 25.0);
-      for (int i = 0; i < p.number_of_pedestrian; i++) {
-        spawnAndCrossPedestrian(i, spawn_pose, goal_pose);
-      }
+    for (int i = 0; i < params_.random_parameters.crossing_pedestrian.number_of_pedestrian; i++) {
+      spawnAndCrossPedestrian(i, 34392, 34576);
     }
 
     spawnAndDespawnRelativeFromEgoInRange(34621, 10.0, 20.0, 10.0, -5.0);
+#endif
+
+
+    // Initialize random seed
+    srand(time(0));
+
+    // やりたいこと
+    // 特定のlane_idの200m以内になったら、回避対象をspawn（位置はランダム、数もランダム）
+    // spawnRoadParkingVehicles(176148, randomInt(3, 4), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(176193, randomInt(3, 4), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(1501, randomInt(3, 4), DIRECTION::RIGHT);
+    // spawnRoadParkingVehicles(1500, randomInt(3, 4), DIRECTION::CENTER);
+    spawnAndMoveToGoal(176261, 176187);
+
+    // 特定のlane_idの200m以内になったら、横断歩道歩行者をspawn（速度は毎回ランダム、人数はspawnで抽選、数秒ごとにspawnを止める）
+
+    // 特定のlane_idの200m以内になったら、交差点の奥から車両が来る。（速度は毎回ランダム、数秒ごとにspawnを止める）
+
+
   }
 
   void onInitialize() override
@@ -231,16 +311,20 @@ private:
     params_ = param_listener_->get_params();
 
     /// Spawn road parking vehicle with initial parameters.
-    spawnRoadParkingVehicles(34705);
+    // spawnRoadParkingVehicles(176148, 4, DIRECTION::LEFT);
+    spawnRoadParkingVehicles(176193, randomInt(3, 4), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(1501, randomInt(3, 4), DIRECTION::RIGHT);
+    spawnRoadParkingVehicles(1500, randomInt(3, 4), DIRECTION::CENTER);
+    spawnAndMoveToGoal(176261, 176187);
 
-    spawnEgoEntity(
-      api_.canonicalize(constructLaneletPose(34621, 10, 0, 0, 0, 0)),
-      {api_.canonicalize(constructLaneletPose(34606, 0, 0, 0, 0, 0))}, getVehicleParameters());
+    const auto spawn_pose = api_.canonicalize(constructLaneletPose(176126, 10, 0, 0, 0, 0));
+    const auto goal_pose = api_.canonicalize(constructLaneletPose(108, 0, 0, 0, 0, 0));
+    spawnEgoEntity(spawn_pose, {goal_pose}, getVehicleParameters());
 
-    api_.spawn(
-      "parking_outside", api_.getMapPoseFromRelativePose("ego", createPose(10.0, 15.0)),
-      getVehicleParameters(),
-      traffic_simulator::entity::VehicleEntity::BuiltinBehavior::doNothing());
+    // api_.spawn(
+    //   "parking_outside", api_.getMapPoseFromRelativePose("ego", createPose(10.0, 15.0)),
+    //   getVehicleParameters(),
+    //   traffic_simulator::entity::VehicleEntity::BuiltinBehavior::doNothing());
   }
 };
 
