@@ -94,6 +94,10 @@ public:
     engine_(seed_gen_())
   {
     start();
+
+    // sub_initial_pose_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    //   "/initialpose3d", rclcpp::QoS(1),
+    //   std::bind(&RandomScenario::onInitialPose, this, std::placeholders::_1));
   }
 
 private:
@@ -103,6 +107,62 @@ private:
   std::mt19937 engine_;
   double lane_change_position = 0.0;
   bool lane_change_requested = false;
+
+  const size_t MAX_SPAWN_NUMBER = 10;
+
+  // rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr sub_initial_pose_;
+  // void onInitialPose(const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr initial_pose) {
+  //   api_.setEntityStatus(
+  //     "ego", initial_pose->pose.pose, traffic_simulator::helper::constructActionStatus());
+  // }
+
+  // bool isEgoCloseTo(const lanelet::Id & lanelet_id)
+  // {
+  //   constexpr auto close_distance = 200.0;  // must be shorter than far_distance
+  //   return api_.reachPosition(
+  //     "ego", api_.canonicalize(constructLaneletPose(lanelet_id, 0.0)), close_distance);
+  // }
+
+  // bool isEgoFarFrom(const lanelet::Id & lanelet_id)
+  // {
+  //   constexpr auto far_distance = 220.0;  // must be longer than close_distance
+  //   return !api_.reachPosition(
+  //     "ego", api_.canonicalize(constructLaneletPose(lanelet_id, 0.0)), far_distance);
+  // }
+
+  // If ego is far from lane_id, remove all entities.
+  // Return if the ego is close to the lane_id.
+  bool removeFarNPCsAndCheckIsInTriggerDistance(
+    const std::string & entity_name_prefix, const lanelet::Id & lane_id)
+  {
+    const auto removeEntities = [&]() {
+      for (int i = 0; i < MAX_SPAWN_NUMBER; i++) {
+        const std::string name = entity_name_prefix + "_" + std::to_string(i);
+        if (api_.entityExists(name)) {
+          api_.despawn(name);
+        }
+      }
+    };
+
+    constexpr auto untrigger_distance = 220.0;  // must be longer than trigger_distance
+    constexpr auto trigger_distance = 200.0;  // must be shorter than untrigger_distance
+    const auto target_lane = api_.canonicalize(constructLaneletPose(lane_id, 0.0));
+
+    const bool already_exist = api_.entityExists(entity_name_prefix + "_0");
+
+    if (already_exist) {
+      if (!api_.reachPosition("ego", target_lane, untrigger_distance)) {
+        removeEntities();
+      }
+      return false;  // no need to spawn vehicles
+    }
+
+    if (!api_.reachPosition("ego", target_lane, trigger_distance)) {
+      return false;  // no need to spawn vehicles
+    }
+
+    return true;  // need to spawn vehicles
+  }
 
   void spawnAndCrossPedestrian(
     const int entity_index, const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id)
@@ -157,17 +217,24 @@ private:
     }
   }
 
-  void spawnAndMoveToGoal(const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id)
+  void spawnAndMoveToGoal(
+    const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id, const double min_v = 3.0,
+    const double max_v = 18.0)
   {
+    const std::string entity_name_prefix =
+      "vehicle_move_to_goal_" + std::to_string(spawn_lane_id) + std::to_string(goal_lane_id);
+    if (!removeFarNPCsAndCheckIsInTriggerDistance(entity_name_prefix, spawn_lane_id)) {
+      return;
+    }
+
     const auto & p = params_.random_parameters.lane_following_vehicle;
     const auto spawn_pose = constructLaneletPose(spawn_lane_id, 0.0);
     const auto goal_pose = constructLaneletPose(goal_lane_id, 0.0);
 
-    const auto entity_name =
-      "vehicle_move_to_goal_" + std::to_string(spawn_lane_id) + "_" + std::to_string(goal_lane_id);
+    const auto entity_name = entity_name_prefix + "_" + std::to_string(goal_lane_id);
     if (!api_.entityExists(entity_name)) {
       api_.spawn(entity_name, api_.canonicalize(spawn_pose), getVehicleParameters());
-      std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
+      std::uniform_real_distribution<> speed_distribution(min_v, max_v);
       const auto speed = speed_distribution(engine_);
       api_.requestSpeedChange(entity_name, speed, true);
       api_.setLinearVelocity(entity_name, speed);
@@ -179,17 +246,19 @@ private:
     }
   }
 
+
   void spawnRoadParkingVehicles(const lanelet::Id & spawn_lanelet_id, const size_t number_of_vehicles, const DIRECTION direction)
   {
+    const std::string entity_name_prefix = "road_parking_" + std::to_string(spawn_lanelet_id);
+    if (!removeFarNPCsAndCheckIsInTriggerDistance(entity_name_prefix, spawn_lanelet_id)) {
+      return;
+    }
+
     const auto & p = params_.random_parameters.road_parking_vehicle;
     std::normal_distribution<> normal_dist(0.0, p.s_variance);
 
     const auto spawn_road_parking_vehicle = [&](const auto & entity_index, const auto offset) {
-      std::string entity_name =
-        "road_parking_" + std::to_string(spawn_lanelet_id) + "_" + std::to_string(entity_index);
-      if (api_.entityExists(entity_name)) {
-        return;
-      }
+      const std::string entity_name = entity_name_prefix + "_" + std::to_string(entity_index);
       const auto space = static_cast<double>(entity_index) / number_of_vehicles;
       const auto spawn_position =
         space * api_.getLaneletLength(spawn_lanelet_id) + normal_dist(engine_);
@@ -292,11 +361,40 @@ private:
 
     // やりたいこと
     // 特定のlane_idの200m以内になったら、回避対象をspawn（位置はランダム、数もランダム）
-    // spawnRoadParkingVehicles(176148, randomInt(3, 4), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(176193, randomInt(3, 4), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(1501, randomInt(3, 4), DIRECTION::RIGHT);
-    // spawnRoadParkingVehicles(1500, randomInt(3, 4), DIRECTION::CENTER);
-    spawnAndMoveToGoal(176261, 176187);
+    spawnAndMoveToGoal(176261, 176175, 10, 20);
+    // spawnRoadParkingVehicles(176148, randomInt(0, 4), DIRECTION::LEFT);  // unstable
+    spawnRoadParkingVehicles(176193, randomInt(0, 4), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
+    // spawnRoadParkingVehicles(174069, randomInt(1, 4), DIRECTION::CENTER);  // 路肩は非対応
+    spawnRoadParkingVehicles(1262, randomInt(1, 4), DIRECTION::RIGHT);
+    spawnAndMoveToGoal(350, 163, 10, 20);
+    spawnAndMoveToGoal(350, 1506, 10, 20);
+    spawnAndMoveToGoal(1482, 38, 10, 20);
+    spawnAndMoveToGoal(1483, 38, 10, 20);
+    spawnAndMoveToGoal(1484, 39, 10, 20);
+    spawnAndMoveToGoal(1501, 40, 10, 20);
+    spawnAndMoveToGoal(32, 38, 10, 20);
+    spawnAndMoveToGoal(33, 39, 10, 20);
+    spawnAndMoveToGoal(34, 40, 10, 20);
+    spawnAndMoveToGoal(1314, 41, 10, 20);
+    spawnAndMoveToGoal(94, 41, 10, 20);
+
+    spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
+    spawnAndMoveToGoal(175378, 174994, 10, 20);
+    spawnAndMoveToGoal(1263, 106, 10, 20);
+    spawnAndMoveToGoal(1263, 178001, 10, 20);
+    spawnAndMoveToGoal(1153, 94, 10, 20);
+    spawnAndMoveToGoal(178233, 179475, 10, 20);
+
+    spawnAndMoveToGoal(74, 84, 10, 20);
+    spawnAndMoveToGoal(75, 83, 10, 20);
+    spawnAndMoveToGoal(75, 178573, 10, 20);
+
+
+    spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
 
     // 特定のlane_idの200m以内になったら、横断歩道歩行者をspawn（速度は毎回ランダム、人数はspawnで抽選、数秒ごとにspawnを止める）
 
@@ -309,13 +407,6 @@ private:
   {
     // api_.setVerbose(true);
     params_ = param_listener_->get_params();
-
-    /// Spawn road parking vehicle with initial parameters.
-    // spawnRoadParkingVehicles(176148, 4, DIRECTION::LEFT);
-    spawnRoadParkingVehicles(176193, randomInt(3, 4), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(1501, randomInt(3, 4), DIRECTION::RIGHT);
-    spawnRoadParkingVehicles(1500, randomInt(3, 4), DIRECTION::CENTER);
-    spawnAndMoveToGoal(176261, 176187);
 
     const auto spawn_pose = api_.canonicalize(constructLaneletPose(176126, 10, 0, 0, 0, 0));
     const auto goal_pose = api_.canonicalize(constructLaneletPose(108, 0, 0, 0, 0, 0));
