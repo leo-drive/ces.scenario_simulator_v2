@@ -35,10 +35,51 @@ using traffic_simulator::LaneletPose;
 using traffic_simulator::helper::constructLaneletPose;
 using traffic_simulator::lane_change::Direction;
 
+constexpr double MIN_VEL = 10.0;
+constexpr double MAX_VEL = 20.0;
+
 enum class DIRECTION {
   CENTER,
   LEFT,
   RIGHT,
+};
+
+class StateManager {
+private:
+    std::vector<std::chrono::milliseconds> intervals_ms_;
+    std::chrono::time_point<std::chrono::steady_clock> last_update_;
+    int current_state_ = 0;
+
+    void updateState() {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update_);
+
+        while (elapsed > intervals_ms_[current_state_]) {
+            elapsed -= intervals_ms_[current_state_];
+            current_state_ = (current_state_ + 1) % intervals_ms_.size();
+            last_update_ = now - elapsed;
+        }
+    }
+
+public:
+    StateManager(double interval_sec, int state_num) {
+        for (int i = 0; i < state_num; ++i) {
+            intervals_ms_.push_back(std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)));
+        }
+        last_update_ = std::chrono::steady_clock::now();
+    }
+
+    StateManager(const std::vector<double> & interval_secs) {
+        for (double interval_sec : interval_secs) {
+            intervals_ms_.push_back(std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)));
+        }
+        last_update_ = std::chrono::steady_clock::now();
+    }
+
+    int getCurrentState() {
+        updateState();
+        return current_state_;
+    }
 };
 
 namespace
@@ -110,26 +151,6 @@ private:
 
   const size_t MAX_SPAWN_NUMBER = 10;
 
-  // rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr sub_initial_pose_;
-  // void onInitialPose(const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr initial_pose) {
-  //   api_.setEntityStatus(
-  //     "ego", initial_pose->pose.pose, traffic_simulator::helper::constructActionStatus());
-  // }
-
-  // bool isEgoCloseTo(const lanelet::Id & lanelet_id)
-  // {
-  //   constexpr auto close_distance = 200.0;  // must be shorter than far_distance
-  //   return api_.reachPosition(
-  //     "ego", api_.canonicalize(constructLaneletPose(lanelet_id, 0.0)), close_distance);
-  // }
-
-  // bool isEgoFarFrom(const lanelet::Id & lanelet_id)
-  // {
-  //   constexpr auto far_distance = 220.0;  // must be longer than close_distance
-  //   return !api_.reachPosition(
-  //     "ego", api_.canonicalize(constructLaneletPose(lanelet_id, 0.0)), far_distance);
-  // }
-
   // If ego is far from lane_id, remove all entities.
   // Return if the ego is close to the lane_id.
   bool removeFarNPCsAndCheckIsInTriggerDistance(
@@ -144,8 +165,8 @@ private:
       }
     };
 
-    constexpr auto untrigger_distance = 220.0;  // must be longer than trigger_distance
-    constexpr auto trigger_distance = 200.0;  // must be shorter than untrigger_distance
+    constexpr auto untrigger_distance = 22000.0;  // must be longer than trigger_distance
+    constexpr auto trigger_distance = 20000.0;  // must be shorter than untrigger_distance
     const auto target_lane = api_.canonicalize(constructLaneletPose(lane_id, 0.0));
 
     const bool already_exist = api_.entityExists(entity_name_prefix + "_0");
@@ -222,7 +243,7 @@ private:
     const double max_v = 18.0)
   {
     const std::string entity_name_prefix =
-      "vehicle_move_to_goal_" + std::to_string(spawn_lane_id) + std::to_string(goal_lane_id);
+      "vehicle_move_to_goal_" + std::to_string(spawn_lane_id) + "_" + std::to_string(goal_lane_id);
     if (!removeFarNPCsAndCheckIsInTriggerDistance(entity_name_prefix, spawn_lane_id)) {
       return;
     }
@@ -231,7 +252,7 @@ private:
     const auto spawn_pose = constructLaneletPose(spawn_lane_id, 0.0);
     const auto goal_pose = constructLaneletPose(goal_lane_id, 0.0);
 
-    const auto entity_name = entity_name_prefix + "_" + std::to_string(goal_lane_id);
+    const auto entity_name = entity_name_prefix;
     if (!api_.entityExists(entity_name)) {
       api_.spawn(entity_name, api_.canonicalize(spawn_pose), getVehicleParameters());
       std::uniform_real_distribution<> speed_distribution(min_v, max_v);
@@ -361,40 +382,46 @@ private:
 
     // やりたいこと
     // 特定のlane_idの200m以内になったら、回避対象をspawn（位置はランダム、数もランダム）
-    spawnAndMoveToGoal(176261, 176175, 10, 20);
+    // spawnAndMoveToGoal(176261, 176175, MIN_VEL, MAX_VEL);
     // spawnRoadParkingVehicles(176148, randomInt(0, 4), DIRECTION::LEFT);  // unstable
-    spawnRoadParkingVehicles(176193, randomInt(0, 4), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
+    // spawnRoadParkingVehicles(176193, randomInt(0, 4), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
     // spawnRoadParkingVehicles(174069, randomInt(1, 4), DIRECTION::CENTER);  // 路肩は非対応
-    spawnRoadParkingVehicles(1262, randomInt(1, 4), DIRECTION::RIGHT);
-    spawnAndMoveToGoal(350, 163, 10, 20);
-    spawnAndMoveToGoal(350, 1506, 10, 20);
-    spawnAndMoveToGoal(1482, 38, 10, 20);
-    spawnAndMoveToGoal(1483, 38, 10, 20);
-    spawnAndMoveToGoal(1484, 39, 10, 20);
-    spawnAndMoveToGoal(1501, 40, 10, 20);
-    spawnAndMoveToGoal(32, 38, 10, 20);
-    spawnAndMoveToGoal(33, 39, 10, 20);
-    spawnAndMoveToGoal(34, 40, 10, 20);
-    spawnAndMoveToGoal(1314, 41, 10, 20);
-    spawnAndMoveToGoal(94, 41, 10, 20);
+    // spawnRoadParkingVehicles(1262, randomInt(1, 4), DIRECTION::RIGHT);  // 右駐車は避けれん
+    // spawnAndMoveToGoal(350, 163, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(350, 1506, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1482, 38, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1483, 38, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1484, 39, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1501, 40, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(32, 38, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(33, 39, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(34, 40, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1314, 41, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(94, 41, MIN_VEL, MAX_VEL);
 
-    spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
-    spawnAndMoveToGoal(175378, 174994, 10, 20);
-    spawnAndMoveToGoal(1263, 106, 10, 20);
-    spawnAndMoveToGoal(1263, 178001, 10, 20);
-    spawnAndMoveToGoal(1153, 94, 10, 20);
-    spawnAndMoveToGoal(178233, 179475, 10, 20);
+    // spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
+    // spawnAndMoveToGoal(175378, 174994, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1263, 106, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1265, 178001, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(1153, 94, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(178233, 179475, MIN_VEL, MAX_VEL);
 
-    spawnAndMoveToGoal(74, 84, 10, 20);
-    spawnAndMoveToGoal(75, 83, 10, 20);
-    spawnAndMoveToGoal(75, 178573, 10, 20);
+    // spawnAndMoveToGoal(74, 84, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(75, 83, MIN_VEL, MAX_VEL);
+    // spawnAndMoveToGoal(75, 178573, MIN_VEL, MAX_VEL);
 
 
-    spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
+
+    // spawnRoadParkingVehicles(1513, randomInt(1, 2), DIRECTION::CENTER);
+    // spawnRoadParkingVehicles(1468, randomInt(1, 2), DIRECTION::CENTER);
+    // spawnRoadParkingVehicles(178766, randomInt(0, 1), DIRECTION::LEFT);
+    // spawnRoadParkingVehicles(179473, randomInt(0, 1), DIRECTION::LEFT);
+
 
     // 特定のlane_idの200m以内になったら、横断歩道歩行者をspawn（速度は毎回ランダム、人数はspawnで抽選、数秒ごとにspawnを止める）
 
