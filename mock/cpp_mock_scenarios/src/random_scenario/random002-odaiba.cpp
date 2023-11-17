@@ -34,6 +34,7 @@
 using traffic_simulator::LaneletPose;
 using traffic_simulator::helper::constructLaneletPose;
 using traffic_simulator::lane_change::Direction;
+using TLColor = traffic_simulator::TrafficLight::Color::Value;
 
 constexpr double MIN_VEL = 10.0;
 constexpr double MAX_VEL = 20.0;
@@ -44,42 +45,50 @@ enum class DIRECTION {
   RIGHT,
 };
 
-class StateManager {
+template <typename StateType>
+class StateManager
+{
 private:
-    std::vector<std::chrono::milliseconds> intervals_ms_;
-    std::chrono::time_point<std::chrono::steady_clock> last_update_;
-    int current_state_ = 0;
+  std::vector<StateType> states_;
+  std::vector<std::chrono::milliseconds> intervals_;
+  std::chrono::time_point<std::chrono::steady_clock> last_update_;
+  size_t current_state_index_ = 0;
 
-    void updateState() {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update_);
+  void updateState()
+  {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update_);
 
-        while (elapsed > intervals_ms_[current_state_]) {
-            elapsed -= intervals_ms_[current_state_];
-            current_state_ = (current_state_ + 1) % intervals_ms_.size();
-            last_update_ = now - elapsed;
-        }
+    while (elapsed > intervals_[current_state_index_]) {
+      elapsed -= intervals_[current_state_index_];
+      current_state_index_ = (current_state_index_ + 1) % states_.size();
+      last_update_ = now - elapsed;
     }
+  }
 
 public:
-    StateManager(double interval_sec, int state_num) {
-        for (int i = 0; i < state_num; ++i) {
-            intervals_ms_.push_back(std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)));
-        }
-        last_update_ = std::chrono::steady_clock::now();
+  StateManager(const std::vector<StateType> & states, const std::vector<double> & interval_secs)
+  : states_(states)
+  {
+    for (double interval_sec : interval_secs) {
+      intervals_.push_back(std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)));
     }
+    last_update_ = std::chrono::steady_clock::now();
+  }
 
-    StateManager(const std::vector<double> & interval_secs) {
-        for (double interval_sec : interval_secs) {
-            intervals_ms_.push_back(std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)));
-        }
-        last_update_ = std::chrono::steady_clock::now();
+  StateManager(const std::vector<StateType> & states, const double interval_sec) : states_(states)
+  {
+    for (int i = 0; i < states.size(); ++i) {
+      intervals_.push_back(std::chrono::milliseconds(static_cast<int>(interval_sec * 1000)));
     }
+    last_update_ = std::chrono::steady_clock::now();
+  }
 
-    int getCurrentState() {
-        updateState();
-        return current_state_;
-    }
+  StateType getCurrentState()
+  {
+    updateState();
+    return states_[current_state_index_];
+  }
 };
 
 namespace
@@ -344,7 +353,11 @@ private:
     }
   }
 
-
+  void changeTlColor(
+    const int traffic_light_id, const traffic_simulator::TrafficLight::Color::Value & color)
+  {
+    api_.getConventionalTrafficLight(traffic_light_id).emplace(color);
+  }
 
   void onUpdate() override
   {
@@ -388,45 +401,47 @@ private:
     // spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
     // spawnRoadParkingVehicles(174069, randomInt(1, 4), DIRECTION::CENTER);  // 路肩は非対応
     // spawnRoadParkingVehicles(1262, randomInt(1, 4), DIRECTION::RIGHT);  // 右駐車は避けれん
-    // spawnAndMoveToGoal(350, 163, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(350, 1506, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1482, 38, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1483, 38, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1484, 39, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1501, 40, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(32, 38, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(33, 39, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(34, 40, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1314, 41, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(94, 41, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(350, 163, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(350, 1506, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1482, 38, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1483, 38, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1484, 39, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1501, 40, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(32, 38, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(33, 39, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(34, 40, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1314, 41, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(94, 41, MIN_VEL, MAX_VEL);
 
-    // spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
-    // spawnAndMoveToGoal(175378, 174994, MIN_VEL, MAX_VEL);
+    spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
+    spawnAndMoveToGoal(175378, 174994, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(1263, 106, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1265, 178001, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(1153, 94, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(178233, 179475, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1265, 178001, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1153, 94, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(178233, 179475, MIN_VEL, MAX_VEL);
 
-    // spawnAndMoveToGoal(74, 84, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(75, 83, MIN_VEL, MAX_VEL);
-    // spawnAndMoveToGoal(75, 178573, MIN_VEL, MAX_VEL);
-
-
-    // spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
-
-    // spawnRoadParkingVehicles(1513, randomInt(1, 2), DIRECTION::CENTER);
-    // spawnRoadParkingVehicles(1468, randomInt(1, 2), DIRECTION::CENTER);
-    // spawnRoadParkingVehicles(178766, randomInt(0, 1), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(179473, randomInt(0, 1), DIRECTION::LEFT);
+    spawnAndMoveToGoal(74, 84, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(75, 83, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(75, 178573, MIN_VEL, MAX_VEL);
 
 
+    spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
+
+    spawnRoadParkingVehicles(1513, randomInt(1, 2), DIRECTION::CENTER);
+    spawnRoadParkingVehicles(1468, randomInt(1, 2), DIRECTION::CENTER);
+    spawnRoadParkingVehicles(178766, randomInt(0, 1), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(179473, randomInt(0, 1), DIRECTION::LEFT);
+
+    // 特定のlane_idの200m以内になったら、信号を時間ごとに変える。
+    StateManager<TLColor> sm({TLColor::green, TLColor::yellow, TLColor::red}, {3.0, 1.0, 3.0});
+
+    changeTlColor(10584, sm.getCurrentState());
     // 特定のlane_idの200m以内になったら、横断歩道歩行者をspawn（速度は毎回ランダム、人数はspawnで抽選、数秒ごとにspawnを止める）
 
     // 特定のlane_idの200m以内になったら、交差点の奥から車両が来る。（速度は毎回ランダム、数秒ごとにspawnを止める）
-
 
   }
 
