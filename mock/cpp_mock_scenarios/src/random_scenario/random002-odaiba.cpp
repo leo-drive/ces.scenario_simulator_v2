@@ -20,6 +20,7 @@
 #include <traffic_simulator/api/api.hpp>
 
 #include <traffic_simulator_msgs/msg/behavior_parameter.hpp>
+#include <traffic_simulator/helper/stop_watch.hpp>
 
 #include <quaternion_operation/quaternion_operation.h>
 #include "./random_util.hpp"
@@ -59,8 +60,11 @@ private:
   bool lane_change_requested = false;
 
   const size_t MAX_SPAWN_NUMBER = 10;
+  bool ego_is_in_stuck_ = false;
 
-  StateManager<TLColor> tl_state_manager_{{TLColor::green, TLColor::yellow, TLColor::red}, {3.0, 1.0, 3.0}};
+  MyStopWatch<> sw_ego_stuck_;
+
+  StateManager<std::string> tl_state_manager_{{"red", "amber", "green"}, {10.0, 3.0, 10.0}};
 
   // If ego is far from lane_id, remove all entities.
   // Return if the ego is close to the lane_id.
@@ -159,7 +163,6 @@ private:
       return;
     }
 
-    const auto & p = params_.random_parameters.lane_following_vehicle;
     const auto spawn_pose = constructLaneletPose(spawn_lane_id, 0.0);
     const auto goal_pose = constructLaneletPose(goal_lane_id, 0.0);
 
@@ -196,7 +199,9 @@ private:
         space * api_.getLaneletLength(spawn_lanelet_id) + normal_dist(engine_);
       const auto spawn_pose = constructLaneletPose(spawn_lanelet_id, spawn_position, offset, 0, 0);
       const auto vehicle_param = getVehicleParameters(get_entity_subtype(p.entity_type));
-      api_.spawn(entity_name, api_.canonicalize(spawn_pose), vehicle_param);
+      if (!api_.entityExists(entity_name)) {
+        api_.spawn(entity_name, api_.canonicalize(spawn_pose), vehicle_param);
+      }
       api_.requestSpeedChange(entity_name, 0, true);
     };
 
@@ -255,10 +260,52 @@ private:
     }
   }
 
-  void changeTlColor(
-    const int traffic_light_id, const traffic_simulator::TrafficLight::Color::Value & color)
+  // Set color for the traffic_right_id. Set opposite color (green <-> red) to the opposite_traffic_right_id
+  void updateRandomTrafficLightColor(
+    const std::vector<int> & traffic_right_ids, const std::vector<int> & opposite_traffic_right_ids,
+    const std::string & tl_color)
   {
-    api_.getConventionalTrafficLight(traffic_light_id).emplace(color);
+    const auto setTlColor = [&](const auto & ids, const std::string & color) {
+      for (const auto id : ids) {
+        for (traffic_simulator::TrafficLight & traffic_light :
+             api_.getConventionalTrafficLights(id)) {
+          traffic_light.clear();
+          traffic_light.set(color + " solidOn circle");
+        };
+      }
+    };
+
+    setTlColor(traffic_right_ids, tl_color);
+    setTlColor(opposite_traffic_right_ids, getOppositeTlColor(tl_color));
+  }
+
+  bool processForEgoStuck() {
+    constexpr auto STUCK_TIME_THRESHOLD = 10.0;
+    const auto stuck_time = api_.getStandStillDuration("ego");
+    // std::cerr << "stuck_time = " << stuck_time << std::endl;
+
+    // 10秒以上スタックしたら、NPC全消ししてflag true、タイマースタート。
+    if (stuck_time > STUCK_TIME_THRESHOLD && !ego_is_in_stuck_) {
+      std::cerr << "\n\nego is in stuck. remove all vehicles!!!\n\n" << std::endl;
+      // api_.despawnEntities();
+      auto entities = api_.getEntityNames();
+      std::all_of(
+        entities.begin(), entities.end(), [&](const auto & e) { return e == api_.getEgoName() ? false :  api_.despawn(e); });
+      ego_is_in_stuck_ = true;
+      sw_ego_stuck_.tic("ego_stuck");
+    }
+
+    // flagがtrueならstuck時の処理を確認。5秒経つまではNPC処理はしない。5秒立ったらフラグを下げる。
+    // →　これは、egoの近傍過ぎるやつはspawnしないという処理を入れることで消せる。
+    if (ego_is_in_stuck_) {
+      if (sw_ego_stuck_.toc("ego_stuck") < 5.0) {
+        return true;
+      } else {
+        ego_is_in_stuck_ = false;
+        return false;
+      }
+    }
+    return false;
   }
 
   void onUpdate() override
@@ -292,15 +339,40 @@ private:
 #endif
 
 
-    // Initialize random seed
-    srand(time(0));
+
+    // const auto stuck_time = api_.getStandStillDuration("ego");
+    // std::cerr << "stuck_time = " << stuck_time << std::endl;
+
+    // // 10秒以上スタックしたら、NPC全消ししてflag true、タイマースタート。
+    // if (stuck_time > 10.0 && !ego_is_in_stuck_) {
+    //   std::cerr << "\n\nego is in stuck. remove all vehicles!!!\n\n" << std::endl;
+    //   // api_.despawnEntities();
+    //   auto entities = api_.getEntityNames();
+    //   std::all_of(
+    //     entities.begin(), entities.end(), [&](const auto & e) { return e == api_.getEgoName() ? false :  api_.despawn(e); });
+    //   ego_is_in_stuck_ = true;
+    //   sw_ego_stuck_.tic("ego_stuck");
+    // }
+
+    // // // flagがtrueならstuck時の処理を確認。5秒経つまではNPC処理はしない。5秒立ったらフラグを下げる。
+    // if (ego_is_in_stuck_) {
+    //   if (sw_ego_stuck_.toc("ego_stuck") < 5.0) {
+    //     return;
+    //   } else {
+    //     ego_is_in_stuck_ = false;
+    //   }
+    // }
+
+    if (processForEgoStuck()) {
+      return;
+    }
 
     // やりたいこと
     // 特定のlane_idの200m以内になったら、回避対象をspawn（位置はランダム、数もランダム）
     // spawnAndMoveToGoal(176261, 176175, MIN_VEL, MAX_VEL);
-    // spawnRoadParkingVehicles(176148, randomInt(0, 4), DIRECTION::LEFT);  // unstable
-    // spawnRoadParkingVehicles(176193, randomInt(0, 4), DIRECTION::LEFT);
-    // spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
+    spawnRoadParkingVehicles(176148, randomInt(0, 4), DIRECTION::LEFT);  // unstable
+    spawnRoadParkingVehicles(176193, randomInt(0, 4), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
     // spawnRoadParkingVehicles(174069, randomInt(1, 4), DIRECTION::CENTER);  // 路肩は非対応
     // spawnRoadParkingVehicles(1262, randomInt(1, 4), DIRECTION::RIGHT);  // 右駐車は避けれん
     spawnAndMoveToGoal(350, 163, MIN_VEL, MAX_VEL);
@@ -325,6 +397,7 @@ private:
     spawnAndMoveToGoal(74, 84, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(75, 83, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(75, 178573, MIN_VEL, MAX_VEL);
+    spawnAndMoveToGoal(1483, 1500, MIN_VEL, MAX_VEL);
 
 
     spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
@@ -338,12 +411,22 @@ private:
     spawnRoadParkingVehicles(179473, randomInt(0, 1), DIRECTION::LEFT);
 
     // 特定のlane_idの200m以内になったら、信号を時間ごとに変える。
+    updateRandomTrafficLightColor({10584}, {10589}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10324, 190343}, {10316, 10322}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10352}, {10356, 10359}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({179285, 10284}, {10293, 10283}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10269, 10276}, {10263, 10277}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10247, 10261}, {10249}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10237, 10236}, {10238}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10546, 10549}, {10551}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10562, 10564}, {10556}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10575, 10569}, {10571, 10581}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10610, 10598}, {10604}, tl_state_manager_.getCurrentState());
+    updateRandomTrafficLightColor({10342}, {10343}, tl_state_manager_.getCurrentState());
 
-    // changeTlColor(10584, sm_.getCurrentState());
 
-    const auto tl_color = tl_state_manager_.getCurrentState();
-    api_.getConventionalTrafficLight(10584).emplace(tl_color);
-    std::cerr << "tl_color = " << static_cast<int>(tl_color) << std::endl;
+
+
     
     // 特定のlane_idの200m以内になったら、横断歩道歩行者をspawn（速度は毎回ランダム、人数はspawnで抽選、数秒ごとにspawnを止める）
 
@@ -353,6 +436,10 @@ private:
 
   void onInitialize() override
   {
+
+    // Initialize random seed
+    srand(time(0));
+
     // api_.setVerbose(true);
     params_ = param_listener_->get_params();
 
