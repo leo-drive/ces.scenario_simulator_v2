@@ -45,7 +45,7 @@ struct MagicSubscription : private rclcpp::Node, public T
 
 public:
   explicit MagicSubscription(const std::string & node_name, const std::string & topic_name)
-  : rclcpp::Node(node_name),
+  : rclcpp::Node(node_name, rclcpp::NodeOptions().use_global_arguments(false)),
     thread(
       [this](auto future) {
         while (rclcpp::ok() and
