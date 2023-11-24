@@ -65,6 +65,7 @@ private:
   MyStopWatch<> sw_ego_stuck_;
 
   StateManager<std::string> tl_state_manager_{{"red", "amber", "green"}, {10.0, 3.0, 10.0}};
+  StateManager<std::string> crosswalk_pedestrian_state_manager_{{"go", "stop"}, {15.0, 15.0}};
 
   // If ego is far from lane_id, remove all entities.
   // Return if the ego is close to the lane_id.
@@ -80,12 +81,14 @@ private:
       }
     };
 
-    constexpr auto untrigger_distance = 22000.0;  // must be longer than trigger_distance
-    constexpr auto trigger_distance = 20000.0;  // must be shorter than untrigger_distance
+    constexpr auto untrigger_distance = 220.0;  // must be longer than trigger_distance
+    constexpr auto trigger_distance = 200.0;  // must be shorter than untrigger_distance
+    constexpr auto too_close_for_trigger_distance = 50.0;  // must be shorter than untrigger_distance
     const auto target_lane = api_.canonicalize(constructLaneletPose(lane_id, 0.0));
 
     const bool already_exist = api_.entityExists(entity_name_prefix + "_0");
 
+    // Remove entities if the lane is far from ego.
     if (already_exist) {
       if (!api_.reachPosition("ego", target_lane, untrigger_distance)) {
         removeEntities();
@@ -93,6 +96,12 @@ private:
       return false;  // no need to spawn vehicles
     }
 
+    // No need to spawn since the ego is too close to the lane.
+    if (api_.reachPosition("ego", target_lane, too_close_for_trigger_distance)) {
+      return false;  // no need to spawn vehicles
+    }
+
+    // No need to spawn since the ego is far from the lane.
     if (!api_.reachPosition("ego", target_lane, trigger_distance)) {
       return false;  // no need to spawn vehicles
     }
@@ -101,29 +110,62 @@ private:
   }
 
   void spawnAndCrossPedestrian(
-    const int entity_index, const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id)
+    const int entity_num_max, const lanelet::Id & spawn_lane_id, const lanelet::Id & goal_lane_id)
   {
+    const std::string entity_name_prefix =
+      "pedestrian_" + std::to_string(spawn_lane_id) + "_" + std::to_string(goal_lane_id);
+    if (!removeFarNPCsAndCheckIsInTriggerDistance(entity_name_prefix, spawn_lane_id)) {
+      return;
+    }
+
     const auto & p = params_.random_parameters.crossing_pedestrian;
     std::normal_distribution<> offset_distribution(0.0, p.offset_variance);
     std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
     const auto spawn_pose = constructLaneletPose(spawn_lane_id, 0.0, offset_distribution(engine_));
     const auto goal_pose = constructLaneletPose(goal_lane_id, 25.0);
 
-    std::string entity_name = "pedestrian_" + std::to_string(spawn_lane_id) + "_" +
-                              std::to_string(goal_lane_id) + "_" + std::to_string(entity_index);
-    constexpr double reach_tolerance = 5.0;
-    if (
-      !api_.entityExists(entity_name) &&
-      !api_.reachPosition("ego", api_.canonicalize(goal_pose), reach_tolerance)) {
-      std::normal_distribution<> offset_distribution(0.0, p.offset_variance);
-      std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
-      api_.spawn(entity_name, api_.canonicalize(spawn_pose), getPedestrianParameters());
-      const auto speed = speed_distribution(engine_);
-      api_.requestSpeedChange(entity_name, speed, true);
-      api_.setLinearVelocity(entity_name, speed);
-    }
-    if (api_.entityExists(entity_name) && api_.getStandStillDuration(entity_name) >= 0.5) {
-      api_.despawn(entity_name);
+    for (int entity_index = 0; entity_index < entity_num_max; ++entity_index) {
+      const std::string entity_name = entity_name_prefix + "_" + std::to_string(entity_index);
+      constexpr double reach_tolerance = 5.0;
+
+      if (!api_.entityExists(entity_name)) {
+        std::normal_distribution<> offset_distribution(0.0, p.offset_variance);
+        std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
+        api_.spawn(entity_name, api_.canonicalize(spawn_pose), getPedestrianParameters());
+        if (crosswalk_pedestrian_state_manager_.getCurrentState() == "go") {
+          const auto speed = speed_distribution(engine_);
+          api_.requestSpeedChange(entity_name, speed, true);
+          api_.setLinearVelocity(entity_name, speed);
+        } else {
+          api_.setLinearVelocity(entity_name, 0.0);
+        }
+      } else {
+        if (
+          crosswalk_pedestrian_state_manager_.getCurrentState() == "go" &&
+          std::fabs(api_.getEntityStatus(entity_name).getTwist().linear.x) < 0.01) {
+          const auto speed = speed_distribution(engine_);
+          api_.requestSpeedChange(entity_name, speed, true);
+          api_.setLinearVelocity(entity_name, speed);
+        }
+        if (api_.reachPosition("ego", api_.canonicalize(goal_pose), reach_tolerance)) {
+          api_.despawn(entity_name);
+        }
+      }
+
+      // if (
+      //   !api_.entityExists(entity_name) &&
+      //   !api_.reachPosition("ego", api_.canonicalize(goal_pose), reach_tolerance)) {
+      //   std::normal_distribution<> offset_distribution(0.0, p.offset_variance);
+      //   std::uniform_real_distribution<> speed_distribution(p.min_speed, p.max_speed);
+      //   api_.spawn(entity_name, api_.canonicalize(spawn_pose), getPedestrianParameters());
+      //   const auto speed = speed_distribution(engine_);
+      //   api_.requestSpeedChange(entity_name, speed, true);
+      //   api_.setLinearVelocity(entity_name, speed);
+        
+      // }
+      // if (api_.entityExists(entity_name) && api_.getStandStillDuration(entity_name) >= 0.5) {
+      //   api_.despawn(entity_name);
+      // }
     }
   }
 
@@ -339,42 +381,31 @@ private:
 #endif
 
 
-
-    // const auto stuck_time = api_.getStandStillDuration("ego");
-    // std::cerr << "stuck_time = " << stuck_time << std::endl;
-
-    // // 10秒以上スタックしたら、NPC全消ししてflag true、タイマースタート。
-    // if (stuck_time > 10.0 && !ego_is_in_stuck_) {
-    //   std::cerr << "\n\nego is in stuck. remove all vehicles!!!\n\n" << std::endl;
-    //   // api_.despawnEntities();
-    //   auto entities = api_.getEntityNames();
-    //   std::all_of(
-    //     entities.begin(), entities.end(), [&](const auto & e) { return e == api_.getEgoName() ? false :  api_.despawn(e); });
-    //   ego_is_in_stuck_ = true;
-    //   sw_ego_stuck_.tic("ego_stuck");
-    // }
-
-    // // // flagがtrueならstuck時の処理を確認。5秒経つまではNPC処理はしない。5秒立ったらフラグを下げる。
-    // if (ego_is_in_stuck_) {
-    //   if (sw_ego_stuck_.toc("ego_stuck") < 5.0) {
-    //     return;
-    //   } else {
-    //     ego_is_in_stuck_ = false;
-    //   }
-    // }
-
     if (processForEgoStuck()) {
       return;
     }
 
     // やりたいこと
     // 特定のlane_idの200m以内になったら、回避対象をspawn（位置はランダム、数もランダム）
-    // spawnAndMoveToGoal(176261, 176175, MIN_VEL, MAX_VEL);
     spawnRoadParkingVehicles(176148, randomInt(0, 4), DIRECTION::LEFT);  // unstable
     spawnRoadParkingVehicles(176193, randomInt(0, 4), DIRECTION::LEFT);
     spawnRoadParkingVehicles(1501, randomInt(0, 4), DIRECTION::RIGHT);
     // spawnRoadParkingVehicles(174069, randomInt(1, 4), DIRECTION::CENTER);  // 路肩は非対応
     // spawnRoadParkingVehicles(1262, randomInt(1, 4), DIRECTION::RIGHT);  // 右駐車は避けれん
+    spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(1513, randomInt(1, 2), DIRECTION::CENTER);
+    spawnRoadParkingVehicles(1468, randomInt(1, 2), DIRECTION::CENTER);
+    spawnRoadParkingVehicles(178766, randomInt(0, 1), DIRECTION::LEFT);
+    spawnRoadParkingVehicles(179473, randomInt(0, 1), DIRECTION::LEFT);
+    
+    
+    
+    // 特定のlane_idの200m以内になったら、移動物体をspawn（位置はランダム、数もランダム）
+    // spawnAndMoveToGoal(176261, 176175, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(350, 163, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(350, 1506, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(1482, 38, MIN_VEL, MAX_VEL);
@@ -386,8 +417,7 @@ private:
     spawnAndMoveToGoal(34, 40, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(1314, 41, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(94, 41, MIN_VEL, MAX_VEL);
-
-    spawnRoadParkingVehicles(1265, randomInt(1, 4), DIRECTION::LEFT);
+    
     spawnAndMoveToGoal(175378, 174994, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(1263, 106, MIN_VEL, MAX_VEL);
     spawnAndMoveToGoal(1265, 178001, MIN_VEL, MAX_VEL);
@@ -400,21 +430,11 @@ private:
     spawnAndMoveToGoal(1483, 1500, MIN_VEL, MAX_VEL);
 
 
-    spawnRoadParkingVehicles(1278, randomInt(1, 2), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(179398, randomInt(1, 2), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(190784, randomInt(0, 1), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(190797, randomInt(0, 1), DIRECTION::LEFT);
-
-    spawnRoadParkingVehicles(1513, randomInt(1, 2), DIRECTION::CENTER);
-    spawnRoadParkingVehicles(1468, randomInt(1, 2), DIRECTION::CENTER);
-    spawnRoadParkingVehicles(178766, randomInt(0, 1), DIRECTION::LEFT);
-    spawnRoadParkingVehicles(179473, randomInt(0, 1), DIRECTION::LEFT);
-
     // 特定のlane_idの200m以内になったら、信号を時間ごとに変える。
     updateRandomTrafficLightColor({10584}, {10589}, tl_state_manager_.getCurrentState());
     updateRandomTrafficLightColor({10324, 190343}, {10316, 10322}, tl_state_manager_.getCurrentState());
     updateRandomTrafficLightColor({10352}, {10356, 10359}, tl_state_manager_.getCurrentState());
-    updateRandomTrafficLightColor({179285, 10284}, {10293, 10283}, tl_state_manager_.getCurrentState());
+    // updateRandomTrafficLightColor({179285, 10284}, {10293, 10283}, tl_state_manager_.getCurrentState());
     updateRandomTrafficLightColor({10269, 10276}, {10263, 10277}, tl_state_manager_.getCurrentState());
     updateRandomTrafficLightColor({10247, 10261}, {10249}, tl_state_manager_.getCurrentState());
     updateRandomTrafficLightColor({10237, 10236}, {10238}, tl_state_manager_.getCurrentState());
@@ -424,11 +444,9 @@ private:
     updateRandomTrafficLightColor({10610, 10598}, {10604}, tl_state_manager_.getCurrentState());
     updateRandomTrafficLightColor({10342}, {10343}, tl_state_manager_.getCurrentState());
 
-
-
-
     
     // 特定のlane_idの200m以内になったら、横断歩道歩行者をspawn（速度は毎回ランダム、人数はspawnで抽選、数秒ごとにspawnを止める）
+    // spawnAndCrossPedestrian(3, );
 
     // 特定のlane_idの200m以内になったら、交差点の奥から車両が来る。（速度は毎回ランダム、数秒ごとにspawnを止める）
 
@@ -436,16 +454,22 @@ private:
 
   void onInitialize() override
   {
-
-    // Initialize random seed
-    srand(time(0));
-
     // api_.setVerbose(true);
+
+    srand(time(0));  // Initialize random seed
+
     params_ = param_listener_->get_params();
 
     const auto spawn_pose = api_.canonicalize(constructLaneletPose(176126, 10, 0, 0, 0, 0));
-    const auto goal_pose = api_.canonicalize(constructLaneletPose(108, 0, 0, 0, 0, 0));
-    spawnEgoEntity(spawn_pose, {goal_pose}, getVehicleParameters());
+    const auto goal_poses = [&](const std::vector<lanelet::Id> lane_ids) {
+      std::vector<traffic_simulator::CanonicalizedLaneletPose> poses;
+      for (const auto id : lane_ids) {
+        poses.push_back(api_.canonicalize(constructLaneletPose(id, 0, 0, 0, 0, 0)));
+      }
+      return poses;
+    }({40, 179398, 1467, 179335});
+
+    spawnEgoEntity(spawn_pose, goal_poses, getVehicleParameters());
 
     // api_.spawn(
     //   "parking_outside", api_.getMapPoseFromRelativePose("ego", createPose(10.0, 15.0)),
