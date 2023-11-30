@@ -4,7 +4,7 @@
 
 ### Background
 
-> Please delete this sentence and explain how and why this pull request was sent.
+> Please delete this sentence and explain circumstances that led to this pull request being sent.
 
 ### Purpose
 
