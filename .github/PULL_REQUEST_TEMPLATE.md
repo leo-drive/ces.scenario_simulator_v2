@@ -44,7 +44,7 @@ API::bar()
 
 > If a corresponding Issue exists, please delete this sentence and describe its number.
 
-> If it does not exist, delete the "Link to the issue" section.
+> If it does not exist, please delete the "Link to the issue" section.
 
 ## Checklist for reviewers ☑️
 
