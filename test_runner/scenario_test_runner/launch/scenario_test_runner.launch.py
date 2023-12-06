@@ -67,7 +67,7 @@ def launch_setup(context, *args, **kwargs):
     global_real_time_factor         = LaunchConfiguration("global_real_time_factor",        default=1.0)
     global_timeout                  = LaunchConfiguration("global_timeout",                 default=180)
     initialize_duration             = LaunchConfiguration("initialize_duration",            default=30)
-    launch_autoware                 = LaunchConfiguration("launch_autoware",                default=True)
+    launch_autoware                 = LaunchConfiguration("launch_autoware",                default=False)
     launch_rviz                     = LaunchConfiguration("launch_rviz",                    default=False)
     launch_simple_sensor_simulator  = LaunchConfiguration("launch_simple_sensor_simulator", default=True)
     output_directory                = LaunchConfiguration("output_directory",               default=Path("/tmp"))
