@@ -2,28 +2,32 @@ repositories:
   autoware_adapi_msgs:
     type: git
     url: https://github.com/autowarefoundation/autoware_adapi_msgs.git
-    version: main
+    version: b9f8cb20d5d7480064529381d317b9580b8c7d07
   autoware_msgs: # for tier4_autoware_msgs
     type: git
     url: https://github.com/autowarefoundation/autoware_msgs.git
-    version: main
+    version: 2096152a7811c76bca5ebb76120025e3bdd665bb
   autoware_auto_msgs:
     type: git
     url: https://github.com/tier4/autoware_auto_msgs.git
-    version: tier4/main
+    version: 1e8b6d234e2690c9da386f006bb60835cdccddfd
   autoware_common:
     type: git
     url: https://github.com/autowarefoundation/autoware_common.git
-    version: main
+    version: deed4064d427668e08c10a12da82be9ed0419a52
   color_names:
     type: git
     url: https://github.com/OUXT-Polaris/color_names.git
-    version: master
+    version: 8e65359f2ca3b89d7e243c5054b9328b25a112e9
   tier4_msgs:
     type: git
     url: https://github.com/tier4/tier4_autoware_msgs.git
-    version: tier4/universe # for Autoware.Universe (TIER IV)
+    version: 0035a38240fb12192fc048e4b66a30a9e265cc91
   embree_vendor:
     type: git
     url: https://github.com/tier4/embree_vendor.git
-    version: master
+    version: 0c26ad656bc35aff4422caeb9f0fcdeec310c714
+  vehicle/sample_vehicle_launch:
+    type: git
+    url: https://github.com/autowarefoundation/sample_vehicle_launch.git
+    version: 627068935b12ec6d6121e6a1b885e31d564b04c5
